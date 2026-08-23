@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callClaude, extractJson } from "@/lib/anthropic";
+import { callGemini, extractJson } from "@/lib/gemini";
 import { Chapter, DepthId, getDepth } from "@/lib/types";
 import { randomUUID } from "crypto";
 
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const prompt = buildPrompt(body);
-    const text = await callClaude(prompt, maxTokensFor(body.depth));
+    const text = await callGemini(prompt, maxTokensFor(body.depth));
     const raw = extractJson<RawResult>(text);
 
     if (!raw.title || !Array.isArray(raw.chapters) || raw.chapters.length === 0) {

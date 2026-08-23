@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callClaude, extractJson } from "@/lib/anthropic";
+import { callGemini, extractJson } from "@/lib/gemini";
 import { SourceItem } from "@/lib/types";
 
 interface SourcesRequestBody {
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const prompt = buildPrompt(body);
-    const text = await callClaude(prompt, 700);
+    const text = await callGemini(prompt, 700);
     const raw = extractJson<RawSources>(text);
 
     if (!Array.isArray(raw.sources)) {

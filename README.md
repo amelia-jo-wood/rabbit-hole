@@ -12,8 +12,10 @@ after v0 (a simpler single-category random-topic generator).
 
 - **Next.js 15** (App Router, TypeScript) — one project, no separate backend
 - **Tailwind CSS** — styling, coral/white theme matching the prototype
-- **Claude API** (`claude-sonnet-4-5`) — generates the topic + all chapters in
-  one call, and a second call for the sources screen. Plain `fetch`, no SDK.
+- **Gemini API** (`gemini-2.5-flash`, free tier) — generates the topic + all
+  chapters in one call, and a second call for the sources screen. Plain
+  `fetch`, no SDK. Chosen over the Claude API specifically to keep this
+  project's running cost at $0 — free tier, no credit card.
 - **localStorage** — history, read-progress per chapter, and saved sources.
   No accounts or database in this version (see Stretch Goals).
 
@@ -22,13 +24,12 @@ after v0 (a simpler single-category random-topic generator).
 ```bash
 npm install
 cp .env.example .env.local
-# then edit .env.local and add your ANTHROPIC_API_KEY
+# then edit .env.local and add your GEMINI_API_KEY
 npm run dev
 ```
 
-Open http://localhost:3000. Get an API key at
-https://console.anthropic.com/settings/keys — this is pay-as-you-go, separate
-from a Claude.ai subscription.
+Open http://localhost:3000. Get a free API key (no credit card, 1,500
+requests/day) at https://aistudio.google.com/apikey.
 
 ## How it's put together
 
@@ -41,7 +42,7 @@ URLs or a client store, and this app doesn't need shareable URLs for every
 step — only the finished result (`/?id=...`) needs to be a real, reloadable
 link, since that's what History links to.
 
-- `src/app/api/rabbit-hole/route.ts` — one Claude call that both picks a
+- `src/app/api/rabbit-hole/route.ts` — one Gemini call that both picks a
   specific topic from the selected interests *and* writes all the chapters,
   sized by depth (1 chapter for "Casual Snacker", 4 for "The Explorer", 6 for
   "Deeply Obsessed"). Combining topic + course into one call matches the
@@ -51,8 +52,9 @@ link, since that's what History links to.
 - `src/lib/storage.ts` — history, per-chapter read state, and saved sources,
   isolated from the UI so swapping localStorage for a real backend later is a
   one-file change.
-- `src/lib/anthropic.ts` — the same fetch wrapper + JSON extractor from v0,
-  reused as-is.
+- `src/lib/gemini.ts` — fetch wrapper + JSON extractor (same pattern as v0's
+  Claude version, swapped to Gemini's free tier and its native JSON response
+  mode).
 
 ## A deliberate departure from the design
 
@@ -60,12 +62,12 @@ The Figma design's "Sources & Files" screen implies real, fetchable source
 files (open a file, sync to Notion). This version generates *plausible
 AI-suggested* sources instead — titles and descriptions of the kind of
 video/article/podcast that would exist — and says so in the UI. Building real
-source curation would mean a live web-search integration, which means a
-second paid API key on top of the Claude one. For a first version aimed at a
-non-technical user standing this up themselves, one API key felt like the
-right tradeoff. The "open source file" link from the design was replaced with
-a working bookmark/save toggle instead, so the screen still does something
-real rather than something that only looks real.
+source curation would mean a live web-search integration, which means another
+API key and likely another cost on top of the free Gemini one. For a version
+meant to run at $0, one free API key felt like the right tradeoff. The "open
+source file" link from the design was replaced with a working bookmark/save
+toggle instead, so the screen still does something real rather than
+something that only looks real.
 
 ## Stretch goals
 
