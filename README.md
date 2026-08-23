@@ -12,7 +12,7 @@ after v0 (a simpler single-category random-topic generator).
 
 - **Next.js 15** (App Router, TypeScript) — one project, no separate backend
 - **Tailwind CSS** — styling, coral/white theme matching the prototype
-- **Gemini API** (`gemini-2.5-flash`, free tier) — generates the topic + all
+- **Gemini API** (`gemini-3.6-flash`, free tier) — generates the topic + all
   chapters in one call, and a second call for the sources screen. Plain
   `fetch`, no SDK. Chosen over the Claude API specifically to keep this
   project's running cost at $0 — free tier, no credit card.
