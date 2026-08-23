@@ -3,12 +3,15 @@ const GEMINI_API_URL =
 
 interface GeminiPart {
   text?: string;
+  thought?: boolean;
 }
 
 interface GeminiResponse {
   candidates?: {
     content?: { parts?: GeminiPart[] };
+    finishReason?: string;
   }[];
+  promptFeedback?: { blockReason?: string };
 }
 
 /**
@@ -33,8 +36,14 @@ export async function callGemini(
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
-        maxOutputTokens: maxTokens,
+        // Give plenty of headroom: newer Gemini models spend some of
+        // maxOutputTokens on internal "thinking" before the visible
+        // answer, so a tight budget can get cut off before any JSON
+        // is written. thinkingBudget: 0 turns that off entirely, since
+        // this app just needs a direct JSON answer, not reasoning.
+        maxOutputTokens: Math.max(maxTokens, 1024) * 2,
         responseMimeType: "application/json",
+        thinkingConfig: { thinkingBudget: 0 },
       },
     }),
   });
@@ -47,13 +56,25 @@ export async function callGemini(
   }
 
   const data = (await res.json()) as GeminiResponse;
-  const text = data.candidates?.[0]?.content?.parts
+
+  if (data.promptFeedback?.blockReason) {
+    throw new Error(
+      `Gemini blocked this request (${data.promptFeedback.blockReason}).`
+    );
+  }
+
+  const candidate = data.candidates?.[0];
+  const text = candidate?.content?.parts
     ?.map((p) => p.text ?? "")
     .join("")
     .trim();
 
   if (!text) {
-    throw new Error("Gemini API returned an empty response.");
+    throw new Error(
+      `Gemini API returned an empty response (finishReason: ${
+        candidate?.finishReason ?? "unknown"
+      }).`
+    );
   }
 
   return text;
@@ -72,7 +93,11 @@ export function extractJson<T>(text: string): T {
   const start = candidate.indexOf("{");
   const end = candidate.lastIndexOf("}");
   if (start === -1 || end === -1 || end < start) {
-    throw new Error("Could not find a JSON object in the model response.");
+    throw new Error(
+      `Could not find a JSON object in the model response. Raw response started with: ${candidate
+        .slice(0, 200)
+        .replace(/\s+/g, " ")}`
+    );
   }
 
   const jsonSlice = candidate.slice(start, end + 1);
