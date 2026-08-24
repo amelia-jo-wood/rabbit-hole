@@ -31,13 +31,13 @@ export default function StepSources({
         Sources &amp; Files
       </h1>
       <p className="mt-2 text-sm text-ink/60">
-        AI-suggested further reading on {topicTitle}. Bookmark the ones worth
-        chasing down for real.
+        Real results pulled from the web on {topicTitle}. Click one to open
+        it, or save it for later.
       </p>
 
       {loading && (
         <p className="mt-6 text-sm text-ink/50 animate-pulse-soft">
-          Gathering sources…
+          Searching for sources…
         </p>
       )}
 
@@ -47,7 +47,13 @@ export default function StepSources({
         </p>
       )}
 
-      {!loading && !error && (
+      {!loading && !error && sources.length === 0 && (
+        <p className="mt-6 text-sm text-ink/50">
+          No real sources turned up for this one — try a different topic.
+        </p>
+      )}
+
+      {!loading && !error && sources.length > 0 && (
         <ul className="mt-6 space-y-3">
           {sources.map((source, i) => {
             const saved = savedSources.includes(i);
@@ -57,18 +63,22 @@ export default function StepSources({
                 className="rounded-xl border border-line bg-white p-4"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-w-0 flex-1"
+                  >
                     <p className="text-[10px] font-bold uppercase tracking-wide text-coral">
-                      {TYPE_ICON[source.type]} {source.type} ·{" "}
-                      {source.durationLabel}
+                      {TYPE_ICON[source.type]} {source.type} · {source.domain}
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-ink">
+                    <p className="mt-1 text-sm font-semibold text-ink underline-offset-2 hover:underline">
                       {source.title}
                     </p>
-                    <p className="mt-1 text-xs text-ink/50">
-                      {source.description}
+                    <p className="mt-1 line-clamp-2 text-xs text-ink/50">
+                      {source.snippet}
                     </p>
-                  </div>
+                  </a>
                   <button
                     type="button"
                     onClick={() => onToggleSave(i)}

@@ -42,7 +42,7 @@ function buildPrompt(body: GenerateRequestBody): string {
   return `You are the engine behind "rabbit.", a curiosity app that turns someone's interests into ONE specific, fascinating rabbit-hole topic and a short mini-course about it.
 
 The person selected these interests: ${interests}.
-Pick (or invent) a SPECIFIC, surprising topic that sits at the intersection of two of these interests — specific like "The Great Emu War of 1932", never a broad subject like "history". ${avoid}
+Pick a REAL, SPECIFIC, surprising topic that sits at the intersection of two of these interests — something that actually happened or exists, not invented, and specific like "The Great Emu War of 1932", never a broad subject like "history" and never a fictional event. This matters: real further-reading sources get looked up for this topic afterward, so an invented topic would have nothing real to find. ${avoid}
 
 Depth level: "${depthOption.label}" — write exactly ${depthOption.chapterCount} chapter(s). ${depthOption.description}
 

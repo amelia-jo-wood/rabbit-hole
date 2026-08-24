@@ -139,7 +139,6 @@ export default function HomeWizard() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           topicTitle: topic.title,
-          chapterHeadings: chapters.map((c) => c.heading),
         }),
       });
       const data = await res.json();
@@ -153,7 +152,7 @@ export default function HomeWizard() {
     } finally {
       setSourcesLoading(false);
     }
-  }, [topic, chapters, sources]);
+  }, [topic, sources]);
 
   const jumpIn = useCallback(() => {
     const firstUnread = chapters.findIndex((_, i) => !readChapters.includes(i));

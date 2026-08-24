@@ -1,27 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callGemini, extractJson } from "@/lib/gemini";
-import { SourceItem } from "@/lib/types";
+import { domainFromUrl, tavilySearch } from "@/lib/tavily";
+import { SourceItem, SourceType } from "@/lib/types";
 
 interface SourcesRequestBody {
   topicTitle: string;
-  chapterHeadings: string[];
 }
 
-interface RawSources {
-  sources: SourceItem[];
-}
+const VIDEO_DOMAINS = ["youtube.com"];
+const PODCAST_DOMAINS = [
+  "open.spotify.com",
+  "podcasts.apple.com",
+  "overcast.fm",
+];
 
-function buildPrompt(body: SourcesRequestBody): string {
-  return `Suggest 4 further-reading/watching/listening ideas for someone who just read a mini-course on "${body.topicTitle}" covering: ${body.chapterHeadings.join(
-    ", "
-  )}.
+const RESULTS_PER_TYPE = 3;
+const SHOWN_PER_TYPE = 2;
 
-These are AI-suggested reading ideas (plausible titles/descriptions of the kind of source that would exist), not verified real links.
+async function searchType(
+  topicTitle: string,
+  type: SourceType
+): Promise<SourceItem[]> {
+  const query =
+    type === "video"
+      ? `${topicTitle} video`
+      : type === "podcast"
+        ? `${topicTitle} podcast`
+        : topicTitle;
+  const includeDomains =
+    type === "video" ? VIDEO_DOMAINS : type === "podcast" ? PODCAST_DOMAINS : undefined;
 
-Mix the types across video, article, and podcast. For each: a type, a punchy plausible title, a 1-sentence description, and a duration label (e.g. "12 mins" for video/podcast, "6 min read" for article).
+  const results = await tavilySearch(query, includeDomains, RESULTS_PER_TYPE);
 
-Respond with ONLY a JSON object, no other text, in this exact shape:
-{"sources": [{"type": "video", "title": "...", "description": "...", "durationLabel": "12 mins"}]}`;
+  return results.slice(0, SHOWN_PER_TYPE).map((r) => ({
+    type,
+    title: r.title,
+    url: r.url,
+    domain: domainFromUrl(r.url),
+    snippet: r.content.slice(0, 180).trim(),
+  }));
 }
 
 export async function POST(req: NextRequest) {
@@ -42,21 +58,35 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  try {
-    const prompt = buildPrompt(body);
-    const text = await callGemini(prompt, 700);
-    const raw = extractJson<RawSources>(text);
+  // Three real searches (video-only domains, podcast-only domains, general
+  // web) run in parallel, instead of one AI call that guesses
+  // plausible-sounding sources. Each result is a real, clickable link.
+  // allSettled (not all): a hiccup on, say, the podcast search shouldn't
+  // sink the video and article results too - just show fewer sources.
+  const settled = await Promise.allSettled([
+    searchType(body.topicTitle, "video"),
+    searchType(body.topicTitle, "podcast"),
+    searchType(body.topicTitle, "article"),
+  ]);
 
-    if (!Array.isArray(raw.sources)) {
-      throw new Error("Model response was missing sources.");
-    }
+  const sources = settled
+    .filter((r): r is PromiseFulfilledResult<SourceItem[]> => r.status === "fulfilled")
+    .flatMap((r) => r.value);
 
-    return NextResponse.json({ sources: raw.sources });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+  const allFailed = settled.every((r) => r.status === "rejected");
+  if (allFailed) {
+    const firstError = settled.find(
+      (r): r is PromiseRejectedResult => r.status === "rejected"
+    );
+    const message =
+      firstError?.reason instanceof Error
+        ? firstError.reason.message
+        : "Unknown error";
     return NextResponse.json(
       { error: `Couldn't find sources: ${message}` },
       { status: 500 }
     );
   }
+
+  return NextResponse.json({ sources });
 }

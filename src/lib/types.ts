@@ -98,8 +98,9 @@ export type SourceType = "video" | "article" | "podcast";
 export interface SourceItem {
   type: SourceType;
   title: string;
-  description: string;
-  durationLabel: string;
+  url: string;
+  domain: string;
+  snippet: string;
 }
 
 export interface HistoryEntry {
