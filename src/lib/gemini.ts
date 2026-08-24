@@ -3,7 +3,6 @@ const GEMINI_API_URL =
 
 interface GeminiPart {
   text?: string;
-  thought?: boolean;
 }
 
 interface GeminiResponse {
@@ -18,10 +17,18 @@ interface GeminiResponse {
  * Calls the Gemini API (free tier: generous daily request limit, no credit
  * card) with a single prompt and returns the raw text of the response.
  * Plain fetch, no SDK dependency to version-track.
+ *
+ * maxOutputTokens is deliberately NOT inflated beyond the caller's own
+ * estimate. Two earlier versions of this file raised it (to make room for
+ * this model's internal "thinking" step) and both got hard-rejected with
+ * a 400 INVALID_ARGUMENT - removing that increase is the one change so
+ * far that has consistently avoided the 400. thinkingConfig.thinkingLevel
+ * is set to "low" instead, to shrink how much of the (unchanged) budget
+ * thinking eats into, leaving more of it for the actual answer.
  */
 export async function callGemini(
   prompt: string,
-  maxTokens = 1024
+  maxOutputTokens = 1024
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -36,14 +43,9 @@ export async function callGemini(
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
-        // Give plenty of headroom: newer Gemini models spend some of
-        // maxOutputTokens on internal "thinking" before the visible
-        // answer, so a tight budget can get cut off before any JSON
-        // is written. thinkingBudget: 0 turns that off entirely, since
-        // this app just needs a direct JSON answer, not reasoning.
-        maxOutputTokens: Math.max(maxTokens, 1024) * 2,
+        maxOutputTokens,
         responseMimeType: "application/json",
-        thinkingConfig: { thinkingBudget: 0 },
+        thinkingConfig: { thinkingLevel: "low" },
       },
     }),
   });
@@ -68,6 +70,15 @@ export async function callGemini(
     ?.map((p) => p.text ?? "")
     .join("")
     .trim();
+
+  // A MAX_TOKENS finish means the response was cut off mid-generation -
+  // whatever text came through is likely incomplete JSON, so fail clearly
+  // here instead of handing broken text to the JSON parser downstream.
+  if (candidate?.finishReason === "MAX_TOKENS") {
+    throw new Error(
+      `Gemini's response got cut off before finishing (hit the ${maxOutputTokens}-token limit). Try again, or ask for a shorter result.`
+    );
+  }
 
   if (!text) {
     throw new Error(
