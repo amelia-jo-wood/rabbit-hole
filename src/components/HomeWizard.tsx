@@ -139,6 +139,7 @@ export default function HomeWizard() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           topicTitle: topic.title,
+          topicTeaser: topic.teaser,
         }),
       });
       const data = await res.json();
