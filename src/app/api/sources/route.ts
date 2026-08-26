@@ -23,13 +23,18 @@ const PODCAST_DOMAINS = [
 // Pull a wider pool of raw candidates than we'll ever show, so the
 // relevance filtering below (score cutoff, episode-only podcasts, the
 // Gemini pass) has real options to choose from instead of being stuck
-// approving or rejecting the only 2 results that came back.
-const CANDIDATES_PER_TYPE = 5;
-const SHOWN_PER_TYPE = 2;
+// approving or rejecting the only 2 results that came back. Articles get
+// a bigger pool than video/podcast since general web search (no domain
+// restriction) naturally turns up more candidates.
+const CANDIDATES_PER_TYPE = 8;
+const ARTICLE_CANDIDATES = 10;
+const SHOWN_PER_TYPE = 4;
 // Tavily's own relevance score is 0-1. Below this, a result is often just
 // a page that happens to share a word with the topic (a place name, a
-// title) rather than being about the topic itself.
-const MIN_SCORE = 0.35;
+// title) rather than being about the topic itself. Kept fairly loose
+// on purpose - the Gemini pass below does the real semantic filtering,
+// this just screens out the obvious noise before that.
+const MIN_SCORE = 0.25;
 
 interface Candidate {
   index: number;
@@ -52,8 +57,9 @@ async function searchType(
         : topicTitle;
   const includeDomains =
     type === "video" ? VIDEO_DOMAINS : type === "podcast" ? PODCAST_DOMAINS : undefined;
+  const maxResults = type === "article" ? ARTICLE_CANDIDATES : CANDIDATES_PER_TYPE;
 
-  return tavilySearch(query, includeDomains, CANDIDATES_PER_TYPE, "advanced");
+  return tavilySearch(query, includeDomains, maxResults, "advanced");
 }
 
 function toCandidates(

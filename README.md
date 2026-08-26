@@ -59,7 +59,8 @@ reloadable link, since that's what History links to.
   the user reaches the sources screen. Uses `Promise.allSettled`, not
   `Promise.all`: if one of the three searches has a hiccup, the other two
   still show results instead of the whole screen failing. Each search
-  pulls 5 raw candidates (not just the 2 shown) and then narrows them:
+  pulls 8-10 raw candidates (not just the up-to-4 shown per type) and then
+  narrows them:
   - Anything below Tavily's own relevance score cutoff is dropped — this
     is what used to let through, say, drone footage of San Francisco for
     a topic about "the lost city of San Mateo," or an unrelated comic
