@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import AuthProvider from "@/components/AuthProvider";
 import Header from "@/components/Header";
 import "./globals.css";
 
@@ -13,8 +14,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-white font-sans text-ink antialiased">
-        <Header />
-        <main className="mx-auto max-w-md px-5 py-8">{children}</main>
+        <AuthProvider>
+          <Header />
+          <main className="mx-auto max-w-md px-5 py-8">{children}</main>
+        </AuthProvider>
       </body>
     </html>
   );

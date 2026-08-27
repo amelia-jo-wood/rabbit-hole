@@ -37,7 +37,7 @@ clear that bar — flagged wherever it isn't confirmed yet.
 
 ---
 
-## Feature 1: Accounts
+## Feature 1: Accounts — ✅ built
 
 ### Problem
 
@@ -46,37 +46,81 @@ everything. There's no way to say "this history is mine."
 
 ### Requirements
 
-- Sign up / log in (simplest: email magic link, so there's no password to
-  manage or lose)
+- Sign up / log in — **decided: all three of email/password, Google
+  login, and (initially considered, then dropped in favor of the other
+  two) email magic link**. Magic links aren't actually less secure than a
+  password, but the two chosen methods covered what was wanted here.
 - Once logged in, a rabbit hole, its chapter progress, and its saved
   sources are stored server-side, tied to that account
-- Existing localStorage history should not just vanish — offer to import it
-  into the account on first login
+- Existing localStorage history should not just vanish — imported into
+  the account automatically on first login (see below)
 
-### Open questions (decide before building)
+### Decisions made
 
-1. **Require login to generate at all, or let people try it as a guest
-   first and create an account only if they want to save?** The app's whole
-   pitch is low-friction ("fall down the hole" right now) — a signup wall
-   up front cuts against that. Leaning toward: generate as a guest, prompt
-   to save/log in afterward.
-2. What exactly happens to a guest's in-progress localStorage history the
-   first time they log in — import all of it, or just offer it as a
-   one-time choice?
+1. **Guest-first, confirmed**: generating and reading never requires
+   login. Logging in only changes where saves go — local-only (guest) vs.
+   local *and* cloud (logged in).
+2. **Import on login is automatic, not an offered choice**: the moment
+   someone logs in or signs up on a device that has local history, every
+   local entry is upserted into their account. This is safe to run on
+   every login (each entry is keyed by its own id, so re-running it just
+   re-saves the same rows) and avoids an extra decision/screen for a
+   non-technical user.
 
-### Technical approach (proposed)
+### Technical approach (as built)
 
 - **Supabase** — Postgres database + auth, free tier, no card required.
-  Replaces localStorage as the source of truth once a user is logged in.
-- New tables, roughly: `rabbit_holes` (topic + metadata), `chapters`,
-  `read_progress`, `saved_sources` — each row tied to a `user_id`.
-- The existing API routes (`/api/rabbit-hole`, `/api/sources`) stay mostly
-  the same; what changes is where the *result* gets saved after — Supabase
-  instead of (or alongside) localStorage.
+- One table, not four — `rabbit_holes`, with `chapters`, `sources`,
+  `read_chapters`, and `saved_sources` stored as `jsonb` columns on the
+  same row rather than split into separate tables. The app always reads
+  and writes a whole rabbit hole at once (it's never queried
+  chapter-by-chapter), so one row matches the real access pattern and
+  needs no joins. Row Level Security restricts every row to its
+  `user_id = auth.uid()`, so the same table safely holds every user's
+  data. Exact SQL:
+
+  ```sql
+  create table rabbit_holes (
+    id uuid primary key,
+    user_id uuid not null references auth.users(id) on delete cascade,
+    title text not null,
+    teaser text,
+    hero_tag text,
+    synthesis_threads jsonb,
+    depth text,
+    interest_labels jsonb,
+    chapters jsonb not null,
+    sources jsonb,
+    read_chapters jsonb not null default '[]',
+    saved_sources jsonb not null default '[]',
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  );
+
+  alter table rabbit_holes enable row level security;
+
+  create policy "Users can manage their own rabbit holes"
+    on rabbit_holes
+    for all
+    using (auth.uid() = user_id)
+    with check (auth.uid() = user_id);
+  ```
+
+- `@supabase/supabase-js` is the one exception to this project's
+  fetch-only style (see main README) — auth's token refresh and OAuth
+  redirect handling are exactly the kind of thing worth using a
+  maintained client for instead of hand-rolling.
+- The existing API routes (`/api/rabbit-hole`, `/api/sources`) are
+  unchanged; what's new is `HomeWizard.tsx` also writing each result to
+  Supabase (via `src/lib/cloudStorage.ts`) whenever someone's logged in,
+  alongside the existing localStorage write.
+- Known limitation, not a bug: Supabase's free tier pauses a project
+  after a week of no activity. Data isn't lost, but the next request
+  needs a manual "unpause" click in the Supabase dashboard first.
 
 ---
 
-## Feature 2: Real source curation
+## Feature 2: Real source curation — ✅ built
 
 ### Problem
 

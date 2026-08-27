@@ -4,17 +4,57 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { HistoryEntry } from "@/lib/types";
 import { clearHistory, getHistory } from "@/lib/storage";
+import { deleteCloudHistory, fetchCloudHistory } from "@/lib/cloudStorage";
+import { useAuth } from "@/components/AuthProvider";
 
 export default function HistoryPage() {
+  const { user, loading: authLoading, openAuthModal } = useAuth();
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
 
   useEffect(() => {
-    setEntries(getHistory());
-    setLoaded(true);
-  }, []);
+    if (authLoading) return;
+    let cancelled = false;
 
-  const handleClear = () => {
+    if (user) {
+      fetchCloudHistory()
+        .then((cloudEntries) => {
+          if (cancelled) return;
+          setEntries(cloudEntries);
+          setCloudError(null);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          // Cloud read failed (offline, hiccup, etc.) - fall back to
+          // whatever's on this device rather than showing a dead end.
+          setCloudError(
+            err instanceof Error ? err.message : "Couldn't load your synced history."
+          );
+          setEntries(getHistory());
+        })
+        .finally(() => {
+          if (!cancelled) setLoaded(true);
+        });
+    } else {
+      setEntries(getHistory());
+      setLoaded(true);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, authLoading]);
+
+  const handleClear = async () => {
+    if (user) {
+      try {
+        await deleteCloudHistory();
+      } catch {
+        // Fall through - clearing the local copy below still works, and
+        // the cloud copy can be cleared again next time.
+      }
+    }
     clearHistory();
     setEntries([]);
   };
@@ -37,6 +77,23 @@ export default function HistoryPage() {
           </button>
         )}
       </div>
+
+      {!user && (
+        <button
+          type="button"
+          onClick={openAuthModal}
+          className="mt-3 w-full rounded-lg bg-coral-soft px-4 py-3 text-left text-xs font-semibold text-coral"
+        >
+          Log in to save this across your devices →
+        </button>
+      )}
+
+      {cloudError && (
+        <p className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-xs text-red-700">
+          Couldn&apos;t load your synced history — showing what&apos;s saved
+          on this device instead.
+        </p>
+      )}
 
       {entries.length === 0 ? (
         <p className="mt-6 text-sm text-ink/60">

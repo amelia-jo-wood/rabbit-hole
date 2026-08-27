@@ -9,6 +9,7 @@ import StepDigging from "./steps/StepDigging";
 import StepOverview from "./steps/StepOverview";
 import StepChapter from "./steps/StepChapter";
 import StepSources from "./steps/StepSources";
+import { useAuth } from "./AuthProvider";
 import {
   Chapter,
   DepthId,
@@ -25,6 +26,7 @@ import {
   saveSources,
   toggleSavedSource,
 } from "@/lib/storage";
+import { fetchCloudEntryById, upsertCloudRabbitHole } from "@/lib/cloudStorage";
 
 type Step =
   | "landing"
@@ -40,6 +42,7 @@ const DIGGING_VERBS = ["Synthesizing", "Cross-referencing", "Unearthing", "Pieci
 export default function HomeWizard() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
 
   const [step, setStep] = useState<Step>("landing");
   const [selectedInterests, setSelectedInterests] = useState<InterestId[]>([]);
@@ -68,20 +71,40 @@ export default function HomeWizard() {
     };
   }, [selectedInterests]);
 
-  // Loading a saved entry from History (?id=...)
+  const applyEntry = useCallback((entry: HistoryEntry) => {
+    setTopic(entry.topic);
+    setChapters(entry.chapters ?? []);
+    setReadChapters(entry.readChapters ?? []);
+    setSources(entry.sources ?? null);
+    setSavedSources(entry.savedSources ?? []);
+    setStep("overview");
+  }, []);
+
+  // Loading a saved entry from History (?id=...). Checks this device's
+  // localStorage first (instant, works offline), and only reaches out to
+  // the cloud if it's not there - which happens whenever the entry was
+  // saved from a different device than this one.
   useEffect(() => {
     const id = searchParams.get("id");
     if (!id) return;
-    const entry: HistoryEntry | null = getEntryByTopicId(id);
-    if (entry && entry.chapters) {
-      setTopic(entry.topic);
-      setChapters(entry.chapters);
-      setReadChapters(entry.readChapters ?? []);
-      setSources(entry.sources ?? null);
-      setSavedSources(entry.savedSources ?? []);
-      setStep("overview");
+
+    const local = getEntryByTopicId(id);
+    if (local && local.chapters) {
+      applyEntry(local);
+      return;
     }
-  }, [searchParams]);
+
+    if (user) {
+      fetchCloudEntryById(id)
+        .then((entry) => {
+          if (entry) applyEntry(entry);
+        })
+        .catch(() => {
+          // Link just won't load - no good fallback, and not worth
+          // interrupting the rest of the app over.
+        });
+    }
+  }, [searchParams, user, applyEntry]);
 
   const toggleInterest = useCallback((id: InterestId) => {
     setSelectedInterests((prev) =>
@@ -119,13 +142,25 @@ export default function HomeWizard() {
       setSources(null);
       setSavedSources([]);
       saveRabbitHole(newTopic, newChapters);
+      if (user) {
+        upsertCloudRabbitHole({
+          topic: newTopic,
+          chapters: newChapters,
+          sources: null,
+          readChapters: [],
+          savedSources: [],
+        }).catch(() => {
+          // Cloud sync is a bonus on top of the local save above, which
+          // already succeeded - don't interrupt the flow over it.
+        });
+      }
       router.replace(`/?id=${newTopic.id}`);
       setStep("overview");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setStep("digging");
     }
-  }, [depth, selectedInterests, router]);
+  }, [depth, selectedInterests, router, user]);
 
   const fetchSources = useCallback(async () => {
     if (!topic) return;
@@ -144,8 +179,18 @@ export default function HomeWizard() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong.");
-      setSources(data.sources as SourceItem[]);
-      saveSources(topic.id, data.sources as SourceItem[]);
+      const newSources = data.sources as SourceItem[];
+      setSources(newSources);
+      saveSources(topic.id, newSources);
+      if (user) {
+        upsertCloudRabbitHole({
+          topic,
+          chapters,
+          sources: newSources,
+          readChapters,
+          savedSources,
+        }).catch(() => {});
+      }
     } catch (err) {
       setSourcesError(
         err instanceof Error ? err.message : "Something went wrong."
@@ -153,7 +198,7 @@ export default function HomeWizard() {
     } finally {
       setSourcesLoading(false);
     }
-  }, [topic, sources]);
+  }, [topic, sources, chapters, readChapters, savedSources, user]);
 
   const jumpIn = useCallback(() => {
     const firstUnread = chapters.findIndex((_, i) => !readChapters.includes(i));
@@ -164,26 +209,55 @@ export default function HomeWizard() {
   const continueChapter = useCallback(() => {
     if (!topic) return;
     markChapterRead(topic.id, chapterIndex);
-    setReadChapters((prev) =>
-      prev.includes(chapterIndex) ? prev : [...prev, chapterIndex]
-    );
+    const nextRead = readChapters.includes(chapterIndex)
+      ? readChapters
+      : [...readChapters, chapterIndex];
+    setReadChapters(nextRead);
+    if (user) {
+      upsertCloudRabbitHole({
+        topic,
+        chapters,
+        sources,
+        readChapters: nextRead,
+        savedSources,
+      }).catch(() => {});
+    }
 
     if (chapterIndex + 1 < chapters.length) {
       setChapterIndex((i) => i + 1);
     } else {
       fetchSources();
     }
-  }, [topic, chapterIndex, chapters.length, fetchSources]);
+  }, [
+    topic,
+    chapterIndex,
+    chapters,
+    sources,
+    readChapters,
+    savedSources,
+    user,
+    fetchSources,
+  ]);
 
   const toggleSave = useCallback(
     (index: number) => {
       if (!topic) return;
       toggleSavedSource(topic.id, index);
-      setSavedSources((prev) =>
-        prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
-      );
+      const nextSaved = savedSources.includes(index)
+        ? savedSources.filter((i) => i !== index)
+        : [...savedSources, index];
+      setSavedSources(nextSaved);
+      if (user) {
+        upsertCloudRabbitHole({
+          topic,
+          chapters,
+          sources,
+          readChapters,
+          savedSources: nextSaved,
+        }).catch(() => {});
+      }
     },
-    [topic]
+    [topic, chapters, sources, readChapters, savedSources, user]
   );
 
   const restart = useCallback(() => {

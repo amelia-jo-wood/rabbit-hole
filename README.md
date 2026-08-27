@@ -7,8 +7,12 @@ sources — video, podcast, and article — to explore next.
 v1 matched a Figma prototype (mobile app design, red/coral branding, hobby
 picker → depth picker → generated course → sources screen). v2 (this
 version) replaces v1's AI-guessed sources with real, clickable search
-results — see [`docs/PRD-v2.md`](./docs/PRD-v2.md) and
+results, and adds accounts (email/password + Google login, via Supabase)
+so a rabbit hole and its progress can follow you across devices — see
+[`docs/PRD-v2.md`](./docs/PRD-v2.md) and
 [`docs/PRD-v1.md`](./docs/PRD-v1.md) for the planning behind each version.
+Generating and reading is still guest-friendly — no login needed until you
+want it to sync somewhere else.
 
 ## Stack
 
@@ -22,15 +26,22 @@ results — see [`docs/PRD-v2.md`](./docs/PRD-v2.md) and
   searches per rabbit hole (video, podcast, article), run server-side so
   the results are genuine, clickable links instead of AI guesses. Results
   are then filtered for relevance (see below) before they reach the user.
-- **localStorage** — history, read-progress per chapter, and saved sources.
-  No accounts or database yet (see `docs/PRD-v2.md`, Feature 1).
+- **Supabase** (free tier, no card) — Postgres database + auth (email/
+  password and Google login). Once logged in, a rabbit hole and its
+  progress sync to the account instead of staying on one device.
+- **localStorage** — always used as the on-device copy (works offline,
+  and is the *only* copy for a guest who hasn't logged in). This is the
+  "@supabase/supabase-js" package's one exception to this project's
+  fetch-only style: auth involves token refresh, OAuth redirects, and
+  secure session storage that the maintained client handles correctly and
+  hand-rolled `fetch` calls would not.
 
 ## Setup
 
 ```bash
 npm install
 cp .env.example .env.local
-# then edit .env.local and add GEMINI_API_KEY and TAVILY_API_KEY
+# then edit .env.local and fill in all four keys/URLs
 npm run dev
 ```
 
@@ -38,6 +49,14 @@ Open http://localhost:3000.
 
 - Gemini key (free, no card): https://aistudio.google.com/apikey
 - Tavily key (free, no card, 1,000 searches/month): https://app.tavily.com
+- Supabase URL + anon key (free, no card): create a project at
+  https://supabase.com, then Project Settings → API. Also run the SQL in
+  `docs/PRD-v2.md`'s Feature 1 section to create the `rabbit_holes`
+  table, and enable Google under Authentication → Providers (with a free
+  Google Cloud OAuth client) if you want Google login too.
+- One thing worth knowing: Supabase's free tier pauses a project after a
+  week with no activity. Nothing is lost — it just needs a manual
+  "unpause" click in the Supabase dashboard the next time it's used.
 
 ## How it's put together
 
@@ -78,17 +97,23 @@ reloadable link, since that's what History links to.
     Tavily result can never be swapped for a hallucinated one. If that
     call fails, the route falls back to the score/episode-filtered list
     rather than losing the sources screen entirely.
-- `src/lib/storage.ts` — history, per-chapter read state, and saved
-  sources, isolated from the UI so swapping localStorage for a real
-  backend later (see PRD-v2) is a one-file change.
+- `src/lib/storage.ts` — the on-device (localStorage) copy: history,
+  per-chapter read state, and saved sources.
+- `src/lib/cloudStorage.ts` / `src/lib/supabaseClient.ts` — the account
+  (Supabase) copy of the same data. `HomeWizard.tsx` writes to both on
+  every change when someone's logged in; `src/app/history/page.tsx` reads
+  from the cloud when logged in, localStorage otherwise.
+- `src/components/AuthProvider.tsx` / `AuthModal.tsx` — session state
+  (via React context) and the login/signup UI, including the one-time
+  merge of a guest's local history into their account right after they
+  log in for the first time on a given device.
 - `src/lib/gemini.ts` / `src/lib/tavily.ts` — thin fetch wrappers for each
   API, no SDK dependency to version-track.
 
 ## Stretch goals
 
-See `docs/PRD-v2.md` for the two next features already scoped: accounts
-(so history/progress sync across devices) and — once accounts exist —
-letting a guest save a rabbit hole to their account. Beyond that:
+Both v2 features (real sources, accounts) are now built — see
+`docs/PRD-v2.md` for the reasoning behind each. Beyond that:
 
 - **Usage limits + a paid tier** (Stripe) — the single highest-value SaaS
   feature to add for a portfolio, and still not built here.
